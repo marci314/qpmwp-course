@@ -120,8 +120,8 @@ A, b
 G = np.zeros((2, N))
 G[0, 0:5] = 1
 G[1, 5:10] = 1
-h = np.array([0.5, 0.5])
-# h = np.array([1, 1])
+# h = np.array([0.5, 0.5])
+h = np.array([1, 1])
 
 G, h
 
@@ -166,14 +166,15 @@ solution = qpsolvers.solve_problem(
 # Inspect the solution object
 solution
 dir(solution)
-solution.found
-solution.obj
-solution.is_optimal
-solution.primal_residual
-solution.dual_residual
-solution.duality_gap
 
 solution.x
+
+solution.found
+solution.obj
+solution.primal_residual()
+solution.dual_residual()
+solution.duality_gap()
+
 
 
 
@@ -273,11 +274,14 @@ weights_df
 
 # Plot the efficient frontier
 
-portf_vola = np.diag(weights_df @ covmat @ weights_df.T)
+portf_vola = np.sqrt(np.diag(weights_df @ covmat @ weights_df.T))
+# portf_vola = weights_df.apply(lambda x: np.sqrt(x @ covmat @ x), axis=1)
 portf_return = weights_df @ mu
 
 plt.scatter(portf_vola, portf_return, c=portf_return / portf_vola, cmap='viridis')
 
+
+# Find the risk aversion parameter that maximizes the Sharpe ratio
 
 
 

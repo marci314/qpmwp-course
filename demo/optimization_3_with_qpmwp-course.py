@@ -73,7 +73,10 @@ return_series = data['return_series']
 scalefactor = 1  # could be set to 252 (trading days) for annualized returns
 
 
-expected_return = ExpectedReturn(method='geometric', scalefactor=scalefactor)
+expected_return = ExpectedReturn(
+    method='geometric',
+    scalefactor=scalefactor
+)
 expected_return.estimate(X=return_series, inplace=True)
 # Or:
 mu = expected_return.estimate(X=return_series, inplace=False)
