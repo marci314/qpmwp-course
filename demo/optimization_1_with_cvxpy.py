@@ -45,7 +45,7 @@ import cvxpy as cp
 
 # Load msci country index return series
 
-path_to_data = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
+path_to_data = 'data'
 # N = 24
 N = 10
 df = pd.read_csv(os.path.join(path_to_data, 'msci_country_indices.csv'),
@@ -69,6 +69,26 @@ plt.figure(figsize=(10, 4))
 # level_series.plot(alpha=1, legend=True)
 np.log(level_series).plot(alpha=1, legend=True)
 plt.grid()
+plt.show()
+
+
+# Visualization
+
+# --- Figure 1 ---
+# 1. Create the figure and the 'ax' (axes) first
+fig1, ax1 = plt.subplots(figsize=(10, 4)) 
+# 2. Tell pandas to plot specifically on ax1
+return_series.plot(ax=ax1) 
+ax1.set_title("Return Series")
+ax1.grid(True)
+plt.show() # Show and clear
+
+# --- Figure 2 ---
+fig2, ax2 = plt.subplots(figsize=(10, 4))
+# Use np.log on the series and plot on ax2
+np.log(level_series).plot(ax=ax2, alpha=1, legend=True)
+ax2.set_title("Log-Level Series")
+ax2.grid(True)
 plt.show()
 
 
