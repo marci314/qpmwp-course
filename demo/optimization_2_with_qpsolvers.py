@@ -37,7 +37,7 @@ import qpsolvers
 
 # Load msci country index return series
 
-path_to_data = '../data/'
+path_to_data = 'C:/Users/marce/OneDrive - Universität Zürich UZH/YEAR 202526/QUANTITATIVE PORTFOLIO MANAGEMENT WITH PYTHON/qpmwp-course/data/'
 # N = 24
 N = 10
 df = pd.read_csv(os.path.join(path_to_data, 'msci_country_indices.csv'),
