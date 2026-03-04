@@ -8,6 +8,46 @@
 # First version:    18.01.2025
 # --------------------------------------------------------------------------
 
+"""
+QPMwP: Optimization Strategy Layer
+==================================
+
+This module implements an object-oriented framework for defining and executing 
+quantitative optimization strategies. It uses an Abstract Base Class (ABC) 
+design to separate the mathematical objective definitions from the underlying 
+solver logic.
+
+### CORE COMPONENTS
+
+1. DATA CONTAINERS
+   - `Objective`: A specialized container for QP coefficients (P, q, constant).
+   - `OptimizationParameter`: A dictionary-based configuration manager for 
+     solver settings (defaults to 'cvxopt').
+
+2. THE ABSTRACTION LAYER (`Optimization` ABC)
+   - Defines the standard workflow: 
+     Set Objective -> Model for Solver -> Execute Solve -> Format Results.
+   - `solve_qpsolvers()`: Acts as the bridge between high-level strategy and 
+     the `QuadraticProgram` class.
+   - `model_qpsolvers()`: Handles the automated mapping of financial 
+     constraints (like budget and box limits) into matrix form (GhAb).
+
+3. STRATEGY IMPLEMENTATIONS
+   - `LeastSquares`: Implements constrained linear regression ($||Ax - b||^2$) 
+      with optional L2 (Ridge) regularization.
+   - `MeanVariance`: The classic Markowitz optimization minimizing 
+      risk-adjusted returns ($\lambda \cdot x^T \Sigma x - \mu^T x$).
+   - `MinVariance`: A specialized case focusing purely on risk reduction 
+      by zeroing out the return vector ($q$).
+
+### ARCHITECTURAL FLOW
+[OptimizationData] -> [Strategy.set_objective()] -> [Optimization.solve()] 
+-> [QuadraticProgram] -> [qpsolvers]
+
+"""
+
+
+
 
 
 # Standard library imports

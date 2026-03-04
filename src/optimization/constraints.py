@@ -8,6 +8,55 @@
 # First version:    18.01.2025
 # --------------------------------------------------------------------------
 
+"""
+CORE METHODOLOGY: THE FOUR PILLARS OF CONSTRAINTS
+The class categorizes all investment rules into four internal dictionaries:
+
+1. Budget (Ax = b): Usually ensures 'the sum of all weights must equal 1' (100% investment).
+2. Box (lb <= x <= ub): Sets individual limits (e.g., Long-Only: 0 <= w <= 1).
+3. Linear (Gx <= h): Custom group rules (e.g., 'Sum of Euro-zone countries <= 40%').
+4. L1: Advanced constraints like limiting turnover or transaction costs.
+
+
+
+BREAKDOWN OF KEY FUNCTIONS:
+
+1. add_budget(rhs=1, sense='=')
+   - Defines the basic rule: you can only invest what you have.
+   - Math: sum(weights) = 1.0
+   - Logic: Creates a vector of ones (Amat). If sense is '=', the solver forces 
+     the portfolio total to exactly match the rhs (Right-Hand Side).
+
+2. add_box(box_type="LongOnly", ...)
+   - Limits the 'physical' range of each individual asset weight (wi).
+   - LongOnly: 0 <= wi <= 1. Prevents short-selling (selling assets you don't own).
+   - LongShort: -1 <= wi <= 1. Allows betting against assets.
+   - Logic: Creates lower and upper bound Series for every asset ID in the portfolio.
+
+3. add_linear(G, g_values, sense, rhs)
+   - Used for factor or group-level constraints.
+   - Example: 'The sum of Spain (ES) and Austria (AT) weights < 40%'.
+   - Logic: A 'G' matrix is built where rows are rules and columns are assets.
+     A rule for ES and AT would have 1s in their respective columns and 0 elsewhere.
+
+4. to_GhAb() – THE TRANSLATOR
+   - This is the engine's most critical method. Most solvers do not understand 
+     human terms like 'LongOnly'; they only understand linear algebra. 
+     This function translates all the dictionaries above into standard QP matrices:
+     
+     Standard Form | Meaning               | Math
+     --------------|-----------------------|---------
+     A and b       | Equality constraints  | Ax = b
+     G and h       | Inequality constraints| Gx <= h
+
+   - Logic: 'Sense Switching': If a rule is '>=', it is multiplied by -1 to become 
+     '<=' (the standard solver format).
+   - Logic: 'Reshaping': Ensures outputs are 2D matrices so matrix multiplication 
+     math doesn't crash during the solve.
+
+
+"""
+
 
 # Standard library imports
 import warnings
@@ -15,10 +64,6 @@ import warnings
 # Third party imports
 import numpy as np
 import pandas as pd
-
-
-
-
 
 
 class Constraints:
@@ -199,3 +244,6 @@ class Constraints:
         G = G.reshape(-1, G.shape[-1]) if G is not None else None
 
         return {'G': G, 'h': h, 'A': A, 'b': b}
+    
+
+

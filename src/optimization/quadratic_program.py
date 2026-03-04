@@ -8,6 +8,46 @@
 # First version:    18.01.2025
 # --------------------------------------------------------------------------
 
+"""
+A high-level wrapper for the `qpsolvers` library designed to standardize
+problem definition, ensure numerical stability, and manage solver settings.
+
+--- CLASS ARCHITECTURE & MAPPING ---
+
+1. PROBLEM INITIALIZATION (__init__)
+   - Maps standard QP parameters (P, q, G, h, A, b, lb, ub) into a 
+     centralized 'problem_data' dictionary.
+   - Validates solver availability against USABLE_SOLVERS to prevent 
+     runtime crashes from missing third-party binaries.
+
+2. NUMERICAL PREPROCESSING (solve method)
+   - DIMENSION ALIGNMENT: Automatically reshapes vector 'b' for 
+     sensitive solvers (ECOS, SCS, Clarabel).
+   - PSD ENFORCEMENT: Checks if matrix P is Positive Definite via 
+     'is_pos_def'. If not, applies 'make_pos_def' to ensure the 
+     problem remains convex and solvable.
+   - SPARSITY OPTIMIZATION: If 'sparse' is enabled and the solver 
+     supports it, matrices are converted to CSC format using scipy.sparse.
+
+3. FEASIBILITY ANALYSIS (is_feasible method)
+   - Recursive Logic: Spawns a sub-instance of QuadraticProgram with 
+     zeroed-out objective vectors (P, q).
+   - Utility: Determines if the constraint set (G, h, A, b, lb, ub) 
+     actually allows for a valid solution space before attempting optimization.
+
+4. POST-SOLVE UTILITIES (objective_value method)
+   - Mathematical Form: Calculates $0.5x^T Px + q^T x + constant$.
+   - Flexiblity: Supports custom solution vectors 'x' or retrieves the 
+     last successful optimization result automatically.
+
+--- STANDARD FORM ---
+Minimize:     (1/2) * x.T * P * x + q.T * x
+Subject to:   G * x <= h
+              A * x  = b
+              lb <= x <= ub
+              
+"""
+
 
 
 # Standard library imports
