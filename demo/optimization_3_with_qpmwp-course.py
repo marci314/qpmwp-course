@@ -187,7 +187,7 @@ G.iloc[0, 0:5] = 1
 # Rule 2: The last 5 assets cannot exceed 50% total.
 G.iloc[1, 5:10] = 1
 
-h = pd.Series([0.5, 0.5])
+h = pd.Series([0.5, 0.5]) 
 
 # Math: G * w <= h 
 # (e.g., w1 + w2 + w3 + w4 + w5 <= 0.5)
