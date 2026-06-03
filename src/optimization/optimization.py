@@ -4,13 +4,14 @@
 
 # --------------------------------------------------------------------------
 # Cyril Bachelard
-# This version:     16.02.2026
+# This version:     14.04.2026
 # First version:    18.01.2025
 # --------------------------------------------------------------------------
 
 
 
 # Standard library imports
+import operator
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -22,6 +23,7 @@ import pandas as pd
 from helper_functions import to_numpy
 from estimation.covariance import Covariance
 from estimation.expected_return import ExpectedReturn
+from estimation.black_litterman import bl_posterior_mu_sigma, generate_views_from_scores
 from optimization.optimization_data import OptimizationData
 from optimization.constraints import Constraints
 from optimization.quadratic_program import QuadraticProgram
@@ -172,16 +174,138 @@ class Optimization(ABC):
         tocon = self.constraints.l1.get('turnover')
         if tocon is not None and (turnover_penalty is None or turnover_penalty == 0):
             x_init = np.array(list(tocon['x0'].values()))
-            self.model.linearize_turnover_constraint(x_init=x_init,
-                                                     to_budget=tocon['rhs'])
+            self.model.linearize_turnover_constraint(
+                x_init=x_init,
+                to_budget=tocon['rhs']
+            )
 
         ## Turnover penalty
         if turnover_penalty is not None and turnover_penalty > 0:
             x_init = pd.Series(self.params.get('x_init')).to_numpy()
-            self.model.linearize_turnover_objective(x_init=x_init,
-                                                    turnover_penalty=turnover_penalty)
+            self.model.linearize_turnover_objective(
+                x_init=x_init,
+                turnover_penalty=turnover_penalty
+            )
 
         return None
+
+
+
+class BlackLitterman(Optimization):
+
+    def __init__(
+        self,
+        constraints: Optional[Constraints] = None,
+        covariance: Optional[Covariance] = None,
+        tau_psi: Optional[float] = None,
+        tau_omega: Optional[float] = None,
+        view_gen_algo: str = 'quintile_sort',
+        use_unconditional_cov: bool = True,
+        signal_names: Optional[list] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            constraints=constraints,
+            tau_psi=tau_psi,
+            tau_omega=tau_omega,
+            view_gen_algo=view_gen_algo,
+            use_unconditional_cov=use_unconditional_cov,
+            signal_names=signal_names,
+            **kwargs,
+        )
+        self.covariance = Covariance() if covariance is None else covariance
+
+    def set_objective(self, optimization_data: OptimizationData) -> None:
+        """
+        Sets the objective function for the optimization problem.
+
+        Parameters
+        ----------
+        optimization_data : OptimizationData
+            Must contain return series (for covariance estimation) and scores.
+        """
+
+        # Extract parameters
+        view_gen_algo = self.params['view_gen_algo']
+        use_unconditional_cov = self.params['use_unconditional_cov']
+        signal_names = self.params['signal_names'] or optimization_data['scores'].columns
+
+        # Covariance estimation
+        self.covariance.estimate(X=optimization_data['return_series'], inplace=True)
+
+        # Parameters to scale uncertainty matrices
+        T = optimization_data['return_series'].shape[0]
+        tau_psi = self.params.get('tau_psi', 1/T)
+        tau_omega = self.params.get('tau_omega', 1/T)
+
+        # Prior (market-implied) portfolio
+        w_prior = optimization_data['cap_weights']
+
+        # Calculate implied expected return
+        mu_implied = self.covariance.matrix @ w_prior
+
+        # Extract signal scores
+        scores = optimization_data['scores'][signal_names]
+
+        # Alternatively, use sample mean as reference mean vector
+        # mu_hist = np.exp(np.log(1 + optimization_data['return_series']).mean(axis=0)) - 1
+
+        # Construct the views
+        pick_mat_tmp = {}
+        views_vec_tmp = {}
+        for col in scores.columns:
+            # Generate views
+            pick_mat_tmp[col], views_vec_tmp[col] = generate_views_from_scores(
+                scores=scores[col],
+                # mu_ref=mu_hist,
+                mu_ref=mu_implied,
+                method=view_gen_algo,
+                scalefactor=1,
+            )
+
+        pick_mat = pd.concat(pick_mat_tmp, axis=0)
+        views_vec = pd.concat(views_vec_tmp, axis=0)
+
+        # Define the uncertainty of the views
+        Omega = pd.DataFrame(
+            np.diag([tau_omega] * len(views_vec)),
+            index=views_vec.index,
+            columns=views_vec.index
+        )
+        # # Alternatively:
+        # Omega = P @ covariance.matrix @ P.T * tau_omega
+        # Omega = pd.DataFrame(np.diag(np.diag(Omega)), P.index, P.index)
+
+        # Define the uncertainty of the prior
+        Psi = self.covariance.matrix * tau_psi
+
+        # Compute the posterior expected return vector
+        mu_posterior, sigma_posterior = bl_posterior_mu_sigma(
+            mu_prior=mu_implied,
+            covmat=self.covariance.matrix,
+            P=pick_mat,
+            q=views_vec,
+            Psi=Psi,
+            Omega=Omega,
+        )
+
+        # Adjust turnover penalty
+        turnover_penalty = self.params.get('turnover_penalty')
+        if turnover_penalty is not None and turnover_penalty > 0:
+            self.params['turnover_penalty'] = turnover_penalty * mu_posterior.std()
+
+        # Set objective
+        self.objective = Objective(
+            mu_implied=mu_implied,
+            w_prior=w_prior,
+            q=mu_posterior * (-1),
+            P=(sigma_posterior if use_unconditional_cov else self.covariance.matrix) * 2
+        )
+
+        return None
+
+    def solve(self) -> None:
+        return super().solve()
 
 
 
@@ -307,3 +431,111 @@ class MinVariance(Optimization):
 
 
 
+class PercentilePortfolio(Optimization):
+
+    def __init__(self,
+                 field: Optional[str] = None,
+                 score_weights: Optional[dict] = None,
+                 percentile: int = 80,     # has to be between 0 and 100
+                 sign: str = '>=',         # can be one of '>=', '<=', '>', '<'
+):
+        super().__init__(
+            field=field,
+            score_weights=score_weights,
+            percentile=percentile,
+            sign=sign,
+            solver_name='no-solver-used',
+        )
+
+    def set_objective(self, optimization_data: OptimizationData) -> None:
+
+        field = self.params.get('field')
+        if field is not None:
+            scores = optimization_data['scores'][field]
+        else:
+            score_weights = self.params.get('score_weights')
+            if score_weights is not None:
+                # Compute weighted average
+                scores = (
+                    optimization_data['scores'][score_weights.keys()]
+                    .multiply(score_weights.values())
+                    .sum(axis=1)
+                )
+            else:
+                scores = optimization_data['scores'].mean(axis=1).squeeze()
+
+        # Add tiny noise to zeros since otherwise there might be two threshold values == 0
+        scores[scores == 0] = np.random.normal(0, 1e-10, scores[scores == 0].shape)
+        self.objective = Objective(scores=scores)
+
+        return None
+
+    def solve(self) -> None:
+
+        scores = self.objective.coefficients['scores']
+        th = np.percentile(scores, self.params['percentile'])
+        sign = self.params['sign']
+
+        ops = {
+            '>=': operator.ge,
+            '<=': operator.le,
+            '>': operator.gt,
+            '<': operator.lt,
+        }
+        weights = scores.where(ops[sign](scores, th)).dropna()
+        weights = weights * 0 + 1/len(weights)    # Set all non-zero weights to 1/n (we could also think of weighting proportional to market capitalization)
+
+        self.results.update({
+            'weights': weights.to_dict(),
+            'status': True,
+        })
+
+        return None
+
+
+
+class ScoreVariance(Optimization):
+
+    def __init__(self,
+                 field: str,
+                 constraints: Optional[Constraints] = None,
+                 covariance: Optional[Covariance] = None,
+                 risk_aversion: float = 1,
+                 **kwargs):
+        super().__init__(
+            field=field,
+            constraints=constraints,
+            risk_aversion=risk_aversion,
+            **kwargs,
+        )
+        self.covariance = Covariance() if covariance is None else covariance
+
+    def set_objective(self, optimization_data: OptimizationData) -> None:
+
+        # Arguments
+        risk_aversion = self.params['risk_aversion']
+        field = self.params['field']
+        if field is None:
+            raise ValueError('Field must be specified.')
+
+        # Extract the scores from the optimization data
+        scores = optimization_data['scores'][field]
+
+        # Create quadratic part of the objective function
+        # If risk aversion is not None and not equal to 0, use covariance matrix
+        if risk_aversion is not None and risk_aversion != 0:
+            P = self.covariance.estimate(
+                X=optimization_data['return_series'],
+                inplace=False
+            ) * 2 * risk_aversion
+        else:
+            P = np.zeros(shape = (len(scores), len(scores)))
+        self.objective = Objective(
+            q = scores * (-1),
+            P = P,
+        )
+
+        return None
+
+    def solve(self) -> None:
+        return super().solve()
